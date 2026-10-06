@@ -1,8 +1,7 @@
 name = "clef-nilam"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+keep_vars = true
 
 [ai]
 binding = "AI"
-
-keep_vars = true

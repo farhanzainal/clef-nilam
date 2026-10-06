@@ -1,5 +1,7 @@
+import { calibrate } from "./calibrate.js";
+
 const MODEL = "@cf/cloudflare/clef-flash";
-const SUSPICIOUS_BELOW = 2.5;
+const SUSPICIOUS_BELOW = 2;
 const MAX = { title: 300, excerpt: 8000, moral: 2000 };
 
 const SCALE = [
@@ -92,13 +94,15 @@ async function evaluate(env, b) {
   if (Object.values(scores).some((s) => s == null))
     return { error: "Format jawapan model tidak dikenali", raw: res };
 
-  let weightage = (scores.titleExcerpt + scores.titleMoral + scores.excerptMoral) / 3;
+  const cal = calibrate(b, scores);
   const languageMatch = declared ? toYes(a.language_match) : null;
-  if (languageMatch === false) weightage = Math.max(0, weightage - 1);
-  weightage = r1(weightage);
+  const weightage = languageMatch === false ? Math.max(0, cal.weightage - 1) : cal.weightage;
 
   return {
     weightage,
+    score: r1(cal.raw),
+    reason: cal.reason,
+    flags: cal.flags,
     suspicious: weightage < SUSPICIOUS_BELOW,
     breakdown: Object.fromEntries(Object.entries(scores).map(([k, v]) => [k, r1(v)])),
     languageMatch,

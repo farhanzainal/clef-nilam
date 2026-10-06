@@ -1,11 +1,8 @@
-// Turns clef-flash's 3 pairwise coherence scores into a 0-5 integer verdict (the rubric used by prime-app).
-// clef-flash only measures how well the sections relate, so quality signals it cannot see (empty, copied, injection,
-// fragments, reflection) are decided here. Constants were fitted on 100 synthetic cases (Melayu/Cina/Tamil).
-const TAMIL_OFFSET = 0.8; // clef-flash scores equally good Tamil ~1 point lower than Malay/Chinese
-const ACCEPT_AT = 3.0; // calibrated mean at or above this is a valid reading
-const GIBBERISH_BELOW = 1.4; // calibrated mean below this is nonsense
-const FRAGMENT_BELOW = 30; // weighted length of a synopsis too short to describe anything
-const REFLECTION_AT = 60; // weighted length of a first-person lesson that counts as reflective
+// Turns clef's pairwise coherence and quality scores into a 0-5 integer verdict (the rubric used by prime-app).
+// Clef only measures how well the sections relate, so empty, copied and injected text is decided by rules here;
+// everything else goes to a small gradient-boosted model (model.json) trained to reproduce GPT-6 Luna's score from
+// clef's scores plus text features (length, repetition, overlap, first-person). See scripts in the repo history.
+import MODEL from "./model.json" with { type: "json" };
 
 const CJK = /[㐀-鿿]/gu;
 const CONTENT = /[\p{L}\p{M}\p{N}]/gu;
@@ -35,7 +32,7 @@ const jaccard = (a, b) => {
 };
 const ratio = (part, whole) => (whole ? part / whole : 0);
 
-export function features({ title, excerpt, moral }, { titleExcerpt: te, titleMoral: tm, excerptMoral: em }) {
+export function features({ title, excerpt, moral }, { titleExcerpt: te, titleMoral: tm, excerptMoral: em }, extra = {}) {
   const tamil = TAMIL.test(excerpt + moral) ? 1 : 0;
   const zh = CJK.test(excerpt + moral) ? 1 : 0;
   CJK.lastIndex = 0;
@@ -50,11 +47,26 @@ export function features({ title, excerpt, moral }, { titleExcerpt: te, titleMor
     uniq: ratio(bigrams(excerpt).size, Math.max(1, norm(excerpt).length - 1)),
     avgSent: Math.log1p(weight(excerpt) / Math.max(1, sentences(excerpt))),
     tiRep: Math.min(3, norm(excerpt).split(norm(title)).length - 1),
+    rf: extra.reflection ?? 0, ev: extra.events ?? 0, mn: extra.meaningful ?? 0,
   };
 }
 
-export function calibrate({ title, excerpt, moral }, { titleExcerpt, titleMoral, excerptMoral }) {
-  const raw = (titleExcerpt + titleMoral + excerptMoral) / 3;
+const REASONS = ["GIBBERISH", "MEANINGLESS_CONTENT", "WEAK_LOGIC", "BASIC_COMPREHENSION", "GOOD_COMPREHENSION", "STRONG_REFLECTION"];
+
+function predict(x) {
+  const raw = [...MODEL.init];
+  for (const stage of MODEL.trees)
+    stage.forEach((t, c) => {
+      let n = 0;
+      while (t.l[n] !== -1) n = x[t.f[n]] <= t.t[n] ? t.l[n] : t.r[n];
+      raw[c] += t.v[n];
+    });
+  return MODEL.classes[raw.indexOf(Math.max(...raw))];
+}
+
+export function calibrate(input, scores, extra = {}) {
+  const { title, excerpt, moral } = input;
+  const raw = (scores.titleExcerpt + scores.titleMoral + scores.excerptMoral) / 3;
   const flags = [];
   const done = (weightage, reason) => ({ weightage, reason, flags, raw });
 
@@ -66,10 +78,7 @@ export function calibrate({ title, excerpt, moral }, { titleExcerpt, titleMoral,
   const [t, e, m] = [norm(title), norm(excerpt), norm(moral)];
   if (e === m || e === t || m === t) return done(0, "REPEATED_TEXT");
 
-  const score = raw + (TAMIL.test(excerpt + moral) ? TAMIL_OFFSET : 0);
-  if (score < GIBBERISH_BELOW) return done(0, "GIBBERISH");
-  if (weight(excerpt) < FRAGMENT_BELOW) return done(1, "MEANINGLESS_CONTENT");
-  if (score < ACCEPT_AT) return done(2, "WEAK_LOGIC");
-  if (FIRST_PERSON.test(moral) && weight(moral) >= REFLECTION_AT) return done(5, "STRONG_REFLECTION");
-  return done(sentences(excerpt) >= 2 ? 4 : 3, "GOOD_COMPREHENSION");
+  const f = features(input, scores, extra);
+  const weightage = predict(MODEL.keys.map((k) => f[k]));
+  return done(weightage, REASONS[weightage]);
 }

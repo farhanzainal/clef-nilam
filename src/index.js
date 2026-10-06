@@ -102,7 +102,10 @@ async function evaluate(env, b) {
   if (Object.values(scores).some((s) => s == null))
     return { error: "Format jawapan model tidak dikenali", raw: res };
 
-  const cal = calibrate(b, scores);
+  // The calibrator was trained on the 1-decimal values this API returns, so feed it those.
+  const rounded = Object.fromEntries(Object.entries(scores).map(([k, v]) => [k, r1(v)]));
+  const extra = { reflection: r1o(a.reflection), events: r1o(a.events), meaningful: r1o(a.meaningful) };
+  const cal = calibrate(b, rounded, extra);
   const languageMatch = declared ? toYes(a.language_match) : null;
   const weightage = languageMatch === false ? Math.max(0, cal.weightage - 1) : cal.weightage;
 
@@ -112,8 +115,8 @@ async function evaluate(env, b) {
     reason: cal.reason,
     flags: cal.flags,
     suspicious: weightage < SUSPICIOUS_BELOW,
-    extra: { reflection: r1o(a.reflection), events: r1o(a.events), meaningful: r1o(a.meaningful) },
-    breakdown: Object.fromEntries(Object.entries(scores).map(([k, v]) => [k, r1(v)])),
+    extra,
+    breakdown: rounded,
     languageMatch,
     usage: res.usage,
   };

@@ -1,6 +1,6 @@
 import { calibrate } from "./calibrate.js";
 
-const MODEL = "@cf/cloudflare/clef-flash";
+const MODEL = "@cf/cloudflare/clef";
 const SUSPICIOUS_BELOW = 2;
 const MAX = { title: 300, excerpt: 8000, moral: 2000 };
 
@@ -89,7 +89,7 @@ const r1o = (ans) => {
 async function evaluate(env, b) {
   const declared = b.declaredLanguage?.trim() || null;
   const res = await env.AI.run(MODEL, {
-    model: "clef-flash",
+    model: "clef",
     state: { title: b.title.trim(), excerpt: b.excerpt.trim(), moral: b.moral.trim() },
     questions: buildQuestions(declared),
   });

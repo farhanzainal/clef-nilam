@@ -40,6 +40,10 @@ function buildQuestions(declaredLanguage) {
     title_moral: { type: "score", instructions: pair("TAJUK", "PENGAJARAN"), criteria: SCALE },
     excerpt_moral: { type: "score", instructions: pair("SINOPSIS", "PENGAJARAN"), criteria: SCALE },
   };
+  const one = (instructions) => ({ type: "score", instructions, criteria: SCALE });
+  q.reflection = one("Adakah PENGAJARAN menunjukkan refleksi peribadi, iaitu penulis mengaitkan pengajaran dengan hidupnya sendiri? 0 = tiada langsung, 5 = sangat reflektif.");
+  q.events = one("Adakah SINOPSIS menceritakan peristiwa atau idea utama dengan ayat yang jelas, bukan senarai perkataan atau aksara rawak? 0 = tidak langsung, 5 = sangat jelas.");
+  q.meaningful = one("Adakah keseluruhan teks (tajuk, sinopsis, pengajaran) ayat yang bermakna dan lengkap, bukan aksara rawak, simbol atau perkataan berulang? 0 = tidak bermakna, 5 = sangat bermakna.");
   if (declaredLanguage)
     q.language_match = {
       type: "noul",
@@ -77,6 +81,10 @@ function toYes(ans) {
 }
 
 const r1 = (n) => Math.round(n * 10) / 10;
+const r1o = (ans) => {
+  const n = toScore(ans);
+  return n == null ? null : r1(n);
+};
 
 async function evaluate(env, b) {
   const declared = b.declaredLanguage?.trim() || null;
@@ -104,6 +112,7 @@ async function evaluate(env, b) {
     reason: cal.reason,
     flags: cal.flags,
     suspicious: weightage < SUSPICIOUS_BELOW,
+    extra: { reflection: r1o(a.reflection), events: r1o(a.events), meaningful: r1o(a.meaningful) },
     breakdown: Object.fromEntries(Object.entries(scores).map(([k, v]) => [k, r1(v)])),
     languageMatch,
     usage: res.usage,

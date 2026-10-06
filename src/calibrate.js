@@ -20,6 +20,39 @@ const weight = (s) => (s.match(CONTENT)?.length ?? 0) + 2 * (s.match(CJK)?.lengt
 const norm = (s) => (s.match(CONTENT) ?? []).join("").toLowerCase();
 const sentences = (s) => s.split(/[.!?。！？]+/u).filter((x) => HAS_CONTENT.test(x)).length;
 
+const SYMBOL = /[^\p{L}\p{M}\s.,!?;:'"()。，！？；：、“”‘’\-]/gu;
+const bigrams = (s) => {
+  const n = norm(s);
+  const set = new Set();
+  for (let i = 0; i < n.length - 1; i++) set.add(n.slice(i, i + 2));
+  return set;
+};
+const jaccard = (a, b) => {
+  const [x, y] = [bigrams(a), bigrams(b)];
+  let both = 0;
+  for (const g of x) if (y.has(g)) both++;
+  return x.size + y.size - both ? both / (x.size + y.size - both) : 0;
+};
+const ratio = (part, whole) => (whole ? part / whole : 0);
+
+export function features({ title, excerpt, moral }, { titleExcerpt: te, titleMoral: tm, excerptMoral: em }) {
+  const tamil = TAMIL.test(excerpt + moral) ? 1 : 0;
+  const zh = CJK.test(excerpt + moral) ? 1 : 0;
+  CJK.lastIndex = 0;
+  const mean = (te + tm + em) / 3;
+  return {
+    te, tm, em, mean, min: Math.min(te, tm, em), max: Math.max(te, tm, em), tamil, zh,
+    exW: Math.log1p(weight(excerpt)), moW: Math.log1p(weight(moral)), tiW: Math.log1p(weight(title)),
+    sent: Math.min(sentences(excerpt), 5), fp: FIRST_PERSON.test(moral) ? 1 : 0,
+    ratio: Math.log1p(weight(moral)) - Math.log1p(weight(excerpt)),
+    sym: ratio((excerpt + moral).match(SYMBOL)?.length ?? 0, (excerpt + moral).length),
+    ovTE: jaccard(title, excerpt), ovTM: jaccard(title, moral), ovEM: jaccard(excerpt, moral),
+    uniq: ratio(bigrams(excerpt).size, Math.max(1, norm(excerpt).length - 1)),
+    avgSent: Math.log1p(weight(excerpt) / Math.max(1, sentences(excerpt))),
+    tiRep: Math.min(3, norm(excerpt).split(norm(title)).length - 1),
+  };
+}
+
 export function calibrate({ title, excerpt, moral }, { titleExcerpt, titleMoral, excerptMoral }) {
   const raw = (titleExcerpt + titleMoral + excerptMoral) / 3;
   const flags = [];
